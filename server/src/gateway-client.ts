@@ -36,34 +36,32 @@ export class GatewayClient extends EventEmitter {
   private connect(): void {
     console.log(`[gateway] Connecting to ${this.config.gateway.ws}...`);
 
-    // Connect without auth header — OpenClaw uses challenge-response handshake
-    this.ws = new WebSocket(this.config.gateway.ws);
+    // Connect with Authorization header for OpenClaw gateway
+    this.ws = new WebSocket(this.config.gateway.ws, {
+      headers: this.config.gateway.token
+        ? { Authorization: `Bearer ${this.config.gateway.token}` }
+        : {},
+    });
 
     this.ws.on('open', () => {
-      console.log('[gateway] Connected');
+      console.log('[gateway] WebSocket open');
       state.status.connected = true;
       state.status.reconnectAttempts = 0;
-
-      const evt: GatewayEvent = {
-        type: 'connected',
-        timestamp: new Date().toISOString(),
-        payload: { endpoint: this.config.gateway.ws },
-      };
-      state.pushEvent(evt);
-      this.emit('event', evt);
     });
 
     this.ws.on('message', (raw) => {
+      const text = raw.toString();
+      console.log(`[gateway] << ${text.slice(0, 300)}`);
       try {
-        const msg = JSON.parse(raw.toString());
+        const msg = JSON.parse(text);
         this.handleMessage(msg);
       } catch {
-        console.warn('[gateway] Failed to parse message:', raw.toString().slice(0, 200));
+        console.warn('[gateway] Failed to parse message');
       }
     });
 
     this.ws.on('close', (code, reason) => {
-      console.log(`[gateway] Disconnected: ${code} ${reason}`);
+      console.log(`[gateway] Disconnected: code=${code} reason="${reason}"`);
       state.status.connected = false;
       const evt: GatewayEvent = {
         type: 'disconnected',
@@ -78,13 +76,6 @@ export class GatewayClient extends EventEmitter {
     this.ws.on('error', (err) => {
       console.error('[gateway] Error:', err.message);
       state.status.connected = false;
-      const evt: GatewayEvent = {
-        type: 'error',
-        timestamp: new Date().toISOString(),
-        payload: { message: err.message },
-      };
-      state.pushEvent(evt);
-      this.emit('event', evt);
     });
   }
 
