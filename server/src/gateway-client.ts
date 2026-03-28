@@ -34,15 +34,10 @@ export class GatewayClient extends EventEmitter {
   }
 
   private connect(): void {
-    const url = new URL(this.config.gateway.ws);
-    // Support token via query parameter
-    if (this.config.gateway.token) {
-      url.searchParams.set('token', this.config.gateway.token);
-    }
-
     console.log(`[gateway] Connecting to ${this.config.gateway.ws}...`);
 
-    this.ws = new WebSocket(url.toString(), {
+    // Auth via Authorization header only (OpenClaw gateway protocol)
+    this.ws = new WebSocket(this.config.gateway.ws, {
       headers: this.config.gateway.token
         ? { Authorization: `Bearer ${this.config.gateway.token}` }
         : {},
@@ -100,6 +95,20 @@ export class GatewayClient extends EventEmitter {
   private handleMessage(msg: Record<string, unknown>): void {
     // Normalize gateway messages into our event schema
     const type = (msg.type as string) ?? 'event';
+    const event = (msg.event as string) ?? '';
+
+    // Handle OpenClaw connect_challenge — respond to keep connection alive
+    if (event === 'connect_challenge' || type === 'connect_challenge') {
+      console.log('[gateway] Received connect_challenge, authenticated via header');
+      const evt: GatewayEvent = {
+        type: 'connected',
+        timestamp: new Date().toISOString(),
+        payload: { event: 'connect_challenge', nonce: (msg.payload as Record<string, unknown>)?.nonce ?? '' },
+      };
+      state.pushEvent(evt);
+      this.emit('event', evt);
+      return;
+    }
 
     if (type === 'snapshot' && Array.isArray(msg.sessions)) {
       for (const s of msg.sessions as Session[]) {
