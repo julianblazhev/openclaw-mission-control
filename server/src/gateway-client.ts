@@ -36,12 +36,8 @@ export class GatewayClient extends EventEmitter {
   private connect(): void {
     console.log(`[gateway] Connecting to ${this.config.gateway.ws}...`);
 
-    // Auth via Authorization header only (OpenClaw gateway protocol)
-    this.ws = new WebSocket(this.config.gateway.ws, {
-      headers: this.config.gateway.token
-        ? { Authorization: `Bearer ${this.config.gateway.token}` }
-        : {},
-    });
+    // Connect without auth header — OpenClaw uses challenge-response handshake
+    this.ws = new WebSocket(this.config.gateway.ws);
 
     this.ws.on('open', () => {
       console.log('[gateway] Connected');
@@ -97,13 +93,36 @@ export class GatewayClient extends EventEmitter {
     const type = (msg.type as string) ?? 'event';
     const event = (msg.event as string) ?? '';
 
-    // Handle OpenClaw connect_challenge — respond to keep connection alive
+    // Handle OpenClaw connect_challenge — respond with token + nonce
     if (event === 'connect_challenge' || type === 'connect_challenge') {
-      console.log('[gateway] Received connect_challenge, authenticated via header');
+      const payload = (msg.payload ?? {}) as Record<string, unknown>;
+      const nonce = (payload.nonce as string) ?? '';
+      console.log(`[gateway] Received connect_challenge (nonce: ${nonce.slice(0, 8)}...)`);
+
+      // Respond with connect message per OpenClaw gateway protocol
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        const connectMsg = {
+          type: 'connect',
+          params: {
+            auth: { token: this.config.gateway.token },
+            nonce,
+            role: 'monitor',
+            scopes: ['read'],
+          },
+        };
+        this.ws.send(JSON.stringify(connectMsg));
+        console.log('[gateway] Sent connect response with token + nonce');
+      }
+      return;
+    }
+
+    // Handle hello-ok — gateway accepted our auth
+    if (event === 'hello-ok' || type === 'hello-ok' || event === 'hello_ok' || type === 'hello_ok') {
+      console.log('[gateway] Authenticated successfully (hello-ok)');
       const evt: GatewayEvent = {
         type: 'connected',
         timestamp: new Date().toISOString(),
-        payload: { event: 'connect_challenge', nonce: (msg.payload as Record<string, unknown>)?.nonce ?? '' },
+        payload: { authenticated: true },
       };
       state.pushEvent(evt);
       this.emit('event', evt);
