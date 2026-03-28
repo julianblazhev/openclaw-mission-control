@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  mission-control:
+    build: .
+    ports:
+      - "8787:8787"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - MOCK_GATEWAY=false
+    restart: unless-stopped
+    # On same VPS, gateway is accessible at 127.0.0.1:18789
+    # Use host networking if gateway binds to localhost only
+    network_mode: host

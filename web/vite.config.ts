@@ -1,0 +1,17 @@
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 5173,
+    proxy: {
+      '/realtime': {
+        target: 'ws://localhost:8787',
+        ws: true,
+      },
+      '/health': 'http://localhost:8787',
+      '/gateway': 'http://localhost:8787',
+    },
+  },
+});
